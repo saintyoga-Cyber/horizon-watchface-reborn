@@ -284,8 +284,13 @@ static void init() {
     if (persist_exists(PersistKeyPalette)) {
         uint8_t palette[PaletteSize];
         int length = persist_read_data(PersistKeyPalette, palette, PaletteSize);
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist palette restored length=%d", length);
+        for (int k = 0; k < length; ++k) {
+            APP_LOG(APP_LOG_LEVEL_DEBUG, "  persist[%d] = 0x%02X", k, palette[k]);
+        }
         applyPalette(palette, length);
     } else {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist palette absent — applying kDefaultPalette");
         applyPalette(kDefaultPalette, PaletteSize);
     }
 
@@ -364,8 +369,8 @@ static void init() {
     configureClock();
 
     if (0 == g.location.timestamp) {
-        g.above.current = -frame.size.h / 2;
-        g.below.current = frame.size.h / 2;
+        g.above.current = 0;
+        g.below.current = 0;
         g.rotation.current = 0;
     } else {
         g.above.current = g.horizon;
@@ -760,13 +765,17 @@ static void messageReceived(DictionaryIterator* received, void* context) {
     tuple = dict_find(received, MESSAGE_KEY_BLUETOOTH);
     if (tuple) {
         g.bluetoothAlert = tuple->value->int32;
-        persist_write_int(PersistKeyBattery, g.bluetoothAlert);
+        persist_write_int(PersistKeyBluetooth, g.bluetoothAlert);
         layer_mark_dirty(g.layer);
     }
 
     tuple = dict_find(received, MESSAGE_KEY_PALETTE);
     if (tuple && TUPLE_BYTE_ARRAY == tuple->type) {
         int length = (tuple->length < PaletteSize) ? tuple->length : PaletteSize;
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "PALETTE rx length=%d (tuple->length=%d)", length, (int)tuple->length);
+        for (int k = 0; k < length; ++k) {
+            APP_LOG(APP_LOG_LEVEL_DEBUG, "  rx[%d] = 0x%02X", k, tuple->value->data[k]);
+        }
         persist_write_data(PersistKeyPalette, tuple->value->data, length);
         applyPalette(tuple->value->data, length);
         layer_mark_dirty(g.layer);
@@ -857,6 +866,10 @@ static void applyPalette(const uint8_t* palette, int16_t length) {
     }
     for (; k < PaletteSize; ++k) {
         g.colors[k] = colorFromConfig(kDefaultPalette[k]);
+    }
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "applyPalette length=%d", length);
+    for (k = 0; k < length; ++k) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Palette[%d] = 0x%02X", k, palette[k]);
     }
 }
 
