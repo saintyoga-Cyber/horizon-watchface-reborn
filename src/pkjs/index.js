@@ -26,6 +26,19 @@ var previewComponent = new Preview(previewTemplate, previewStyle);
 var clay = new Clay(clayConfig, clayCustomFunc, { autoHandleEvents: false });
 clay.registerComponent(previewComponent);
 
+var CITIES = {
+    'vancouver':   { latitude: 49.25,   longitude: -123.12, timezone: -420 },
+    'toronto':     { latitude: 43.65,   longitude: -79.38,  timezone: -240 },
+    'montreal':    { latitude: 45.50,   longitude: -73.57,  timezone: -240 },
+    'newyork':     { latitude: 40.71,   longitude: -74.01,  timezone: -240 },
+    'losangeles':  { latitude: 34.05,   longitude: -118.24, timezone: -420 },
+    'chicago':     { latitude: 41.88,   longitude: -87.63,  timezone: -300 },
+    'london':      { latitude: 51.51,   longitude: -0.13,   timezone: 60  },
+    'paris':       { latitude: 48.85,   longitude: 2.35,    timezone: 120 },
+    'tokyo':       { latitude: 35.68,   longitude: 139.69,  timezone: 540 },
+    'sydney':      { latitude: -33.87,  longitude: 151.21,  timezone: 600 }
+};
+
 function locationMessage(pos) {
     'use strict';
     var coordinates = pos.coords,
@@ -182,16 +195,18 @@ Pebble.addEventListener("webviewclosed", function (e) {
     var k,
         dict = clay.getSettings(e.response),
         userData = clay.getUserData(e.response),
+        cityKey = dict['city-select'] || 'vancouver',
+        cityData = CITIES[cityKey] || CITIES['vancouver'],
         message = {
             'BLUETOOTH': parseInt(dict[keys.BLUETOOTH], 10),
             'BATTERY': !!dict[keys.BATTERY],
             'PALETTE': []
         },
         locopts = {
-            automatic: true /* !!dict[keys.LOCATION],
-            latitude: dict[keys.LATITUDE],
-            longitude: dict[keys.LONGITUDE],
-            timezone: dict[keys.TIMEZONE] */
+            automatic: !!dict[keys.LOCATION],
+            latitude:  cityData.latitude,
+            longitude: cityData.longitude,
+            timezone:  new Date().getTimezoneOffset() * -1  // phone's live TZ offset (handles DST)
         };
 
     //console.log('keys: ' + JSON.stringify(keys, null, 2));
