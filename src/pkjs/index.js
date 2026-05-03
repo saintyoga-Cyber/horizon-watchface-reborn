@@ -59,7 +59,10 @@ function sendLocation(pos) {
 
 function locationSuccess(pos) {
     'use strict';
-    pos.timezone = - new Date().getTimezoneOffset();
+    var offsetMinutes = new Date().getTimezoneOffset(); // negative of UTC offset
+    pos.timezone = -offsetMinutes;
+    console.log('GPS fix: lat=' + pos.coords.latitude + ' lon=' + pos.coords.longitude + ' tz=' + pos.timezone + ' min');
+    console.log('Sunrise (UTC hours): ' + sunriset.sun_rise_set(new Date(), pos.coords.longitude, pos.coords.latitude).rise);
     sendLocation(pos);
 }
 
@@ -73,7 +76,7 @@ function locationRequest() {
     var locationOptions = {
             'enableHighAccuracy': true,
             'timeout': 60 * 1000,           // 1 minute (in milliseconds)
-            'maximumAge': 5 * 60 * 1000     // 5 minutes (in milliseconds)
+            'maximumAge': 0                 // always request fresh location
         };
     if (navigator.geolocation) {
         //console.log('get current position');
