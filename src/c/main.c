@@ -600,9 +600,13 @@ void drawClock(Layer* layer, GContext* ctx) {
     fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius - g.strokeWidth);
     fctx_end_fill(&fctx);
 
+    /* Determine if it is night (sun below the horizon line) so the
+     * readout disc can invert its colors for legibility. */
+    bool isNight = sunPoint.y > fcenter.y + INT_TO_FIXED(g.below.current);
+
     /* Fill the readout background. */
     fctx_begin_fill(&fctx);
-    fctx_set_fill_color(&fctx, g.colors[PaletteColorWithin]);
+    fctx_set_fill_color(&fctx, g.colors[isNight ? PaletteColorText : PaletteColorWithin]);
     fctx_plot_circle(&fctx, &fcenter, g.readoutDiscRadius - g.strokeWidth / 2);
     fctx_end_fill(&fctx);
 
@@ -662,8 +666,9 @@ void drawClock(Layer* layer, GContext* ctx) {
     FPoint p;
     fctx_begin_fill(&fctx);
     fctx_set_rotation(&fctx, 0);
-    fctx_set_fill_color(&fctx, g.colors[PaletteColorText]);
-    graphics_context_set_text_color(ctx, g.colors[PaletteColorText]);
+    GColor textColor = g.colors[isNight ? PaletteColorWithin : PaletteColorText];
+    fctx_set_fill_color(&fctx, textColor);
+    graphics_context_set_text_color(ctx, textColor);
 
     /* Draw the time string. */
     formatTime();
