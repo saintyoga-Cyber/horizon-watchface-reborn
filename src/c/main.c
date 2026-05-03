@@ -367,6 +367,7 @@ static void init() {
     batteryStateChanged(battery_state_service_peek());
 
     configureClock();
+    animateClock();
 
     if (0 == g.location.timestamp) {
         g.above.current = 0;
