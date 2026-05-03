@@ -27,33 +27,30 @@ module.exports = [
                 label: 'Battery Status',
                 defaultValue: true
             },
-            /*{
+            {
                 type: 'toggle',
                 messageKey: 'LOCATION',
-                label: 'Automatic Location',
+                label: 'Automatic Location (GPS)',
                 defaultValue: true
             },
             {
-                type: 'input',
-                messageKey: 'LATITUDE',
-                label: 'Latitude',
-                description: 'Degrees North',
-                defaultValue: 40.42
-            },
-            {
-                type: 'input',
-                messageKey: 'LONGITUDE',
-                label: 'Longitude',
-                description: 'Degrees East',
-                defaultValue: -3.72
-            },
-            {
-                type: 'input',
-                messageKey: 'TIMEZONE',
-                label: 'Time Zone',
-                description: 'Minutes from UTC',
-                defaultValue: 120
-            }*/
+                type: 'select',
+                id: 'city-select',
+                label: 'Manual City (if GPS off)',
+                defaultValue: 'vancouver',
+                options: [
+                    { label: 'Vancouver, BC',      value: 'vancouver' },
+                    { label: 'Toronto, ON',        value: 'toronto' },
+                    { label: 'Montreal, QC',       value: 'montreal' },
+                    { label: 'New York, NY',       value: 'newyork' },
+                    { label: 'Los Angeles, CA',    value: 'losangeles' },
+                    { label: 'Chicago, IL',        value: 'chicago' },
+                    { label: 'London, UK',         value: 'london' },
+                    { label: 'Paris, FR',          value: 'paris' },
+                    { label: 'Tokyo, JP',          value: 'tokyo' },
+                    { label: 'Sydney, AU',         value: 'sydney' }
+                ]
+            }
         ]
     },
     {
