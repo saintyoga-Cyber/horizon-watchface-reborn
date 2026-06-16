@@ -73,8 +73,51 @@ Asset-only change. No code impact. Separate commit from Fix 1.
 
 ---
 
+## Fix 3 — Automatic GPS not working / "hard lock" (CORE — isolated commit)
+
+### Problem
+The watch only recomputes the sun arc when it receives a message containing
+`TIMESTAMP` (in `main.c`, the `MESSAGE_KEY_TIMESTAMP` handler is what calls
+`configureClock()` + `animateClock()`). In automatic mode the only thing that
+sends `TIMESTAMP` is a successful GPS fix via `locationSuccess()`.
+
+Commit `0a3a39d` changed the geolocation request to:
+```js
+enableHighAccuracy: true,
+timeout: 60 * 1000,
+maximumAge: 0          // "always request fresh location"
+```
+Requesting a brand-new high-accuracy fix (no cache, 60 s window) routinely
+fails — indoors, and on a watchface whose JS runtime is killed before a slow
+fix returns. On failure `locationError()` only logged and **sent nothing**,
+so the display never updated: the reported hard lock.
+
+### Fix (JS-only, `src/pkjs/index.js`)
+1. Relax the request — sun times need only city-level accuracy:
+   ```js
+   enableHighAccuracy: false,
+   timeout: 15 * 1000,
+   maximumAge: 30 * 60 * 1000   // a recent cached fix is fine
+   ```
+   A cached/coarse fix returns almost instantly, avoiding the JS-kill race.
+2. Persist the last good fix in `locationSuccess()`.
+3. In `locationError()`, fall back to that last fix (with a refreshed
+   timestamp) so the watch always gets a `TIMESTAMP` update and can never
+   hard-lock.
+
+### Risk / scope
+`src/pkjs/index.js` only; no C or message-format changes. Coarse location
+changes sunrise/sunset by seconds at most. Isolated commit.
+
+### Note for testing
+All three fixes are in PebbleKit JS / resources — the watchface must be
+**rebuilt and reinstalled** for them to take effect.
+
+---
+
 ## Delivery
 1. Commit Fix 1 (timezone) on its own.
 2. Commit Fix 2 (icon) on its own.
-3. Push `claude/watchface-timezone-picker-fixes-nrs4dq`.
-4. Merge to `main` (explicitly authorized by the owner) and push `main`.
+3. Commit Fix 3 (GPS reliability) on its own.
+4. Push `claude/watchface-timezone-picker-fixes-nrs4dq`.
+5. Merge to `main` (explicitly authorized by the owner) and push `main`.

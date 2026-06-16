@@ -75,21 +75,39 @@ function locationSuccess(pos) {
     var offsetMinutes = new Date().getTimezoneOffset(); // negative of UTC offset
     pos.timezone = -offsetMinutes;
     console.log('GPS fix: lat=' + pos.coords.latitude + ' lon=' + pos.coords.longitude + ' tz=' + pos.timezone + ' min');
-    console.log('Sunrise (UTC hours): ' + sunriset.sun_rise_set(new Date(), pos.coords.longitude, pos.coords.latitude).rise);
+    // Remember the last good fix so a later failure can fall back to it
+    // rather than leaving the watch stuck on stale data ("hard lock").
+    storeObject('lastfix', {
+        timestamp: Date.now(),
+        timezone: pos.timezone,
+        coords: {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+        }
+    });
     sendLocation(pos);
 }
 
 function locationError(positionError) {
     'use strict';
-    console.warn('position error: ', positionError);
+    console.warn('position error: ', positionError && positionError.message);
+    // Fall back to the last good fix so the watch still receives a fresh
+    // update (sun times recompute for today) instead of locking up.
+    var last = retrieveObject('lastfix', null);
+    if (last) {
+        last.timestamp = Date.now();
+        console.log('GPS failed; sending last known fix as fallback');
+        sendLocation(last);
+    }
 }
 
 function locationRequest() {
     'use strict';
     var locationOptions = {
-            'enableHighAccuracy': true,
-            'timeout': 60 * 1000,           // 1 minute (in milliseconds)
-            'maximumAge': 0                 // always request fresh location
+            'enableHighAccuracy': false,    // coarse location is ample for sun times and far more reliable
+            'timeout': 15 * 1000,           // 15 seconds (in milliseconds)
+            'maximumAge': 30 * 60 * 1000    // accept a fix up to 30 minutes old
         };
     if (navigator.geolocation) {
         //console.log('get current position');
