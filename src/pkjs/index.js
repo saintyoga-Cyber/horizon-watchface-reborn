@@ -206,7 +206,7 @@ Pebble.addEventListener("webviewclosed", function (e) {
             automatic: !!dict[keys.LOCATION],
             latitude:  cityData.latitude,
             longitude: cityData.longitude,
-            timezone:  new Date().getTimezoneOffset() * -1  // phone's live TZ offset (handles DST)
+            timezone:  cityData.timezone  // selected city's UTC offset (minutes). Auto/GPS uses phone offset in locationSuccess()
         };
 
     //console.log('keys: ' + JSON.stringify(keys, null, 2));
