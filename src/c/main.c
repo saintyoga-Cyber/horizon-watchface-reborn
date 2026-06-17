@@ -185,6 +185,12 @@ struct Clock {
     int32_t kilter;
     char strbuf[32];
 
+    // solar-orbit geometry, as offsets from center; depends only on
+    // rotation.current, so recomputed when rotation changes (recomputeOrbit)
+    // rather than on every minute redraw.
+    FPoint pipPoints[24];
+    FPoint labelPoints[4];
+
     // animated state
     int16_anim_t above;
     int16_anim_t below;
@@ -215,6 +221,9 @@ static GColor colorFromConfig(uint8_t cc);
 static void applyPalette(const uint8_t* palette, int16_t length);
 
 static void logLocationFix(LocationFix* loc);
+static void recomputeOrbit(void);
+
+static char* const kHourLabels[4] = { "00", "06", "12", "18" };
 
 // --------------------------------------------------------------------------
 // inline utility functions
@@ -378,6 +387,7 @@ static void init() {
         g.below.current = g.horizon;
         g.rotation.current = g.kilter;
     }
+    recomputeOrbit();
 
     /* --- Activate system services. --- */
 
@@ -435,6 +445,23 @@ void configureClock() {
 
 // --------------------------------------------------------------------------
 
+/* Precompute the solar-orbit pip and hour-label positions as offsets from
+   center. These depend only on g.rotation.current, so this is called wherever
+   rotation.current changes (init, animateClock skip-path, interpolateClock)
+   instead of recomputing 28 trig points on every minute redraw. */
+static void recomputeOrbit(void) {
+    for (int h = 0; h < 24; ++h) {
+        g.pipPoints[h] = clockPoint(FPointZero, g.sunOrbitRadius, hourAngle(h) + g.rotation.current);
+    }
+    for (int h = 0; h < 24; h += 6) {
+        g.labelPoints[h / 6] = clockPoint(FPointZero, g.sunOrbitRadius, hourAngle(h) + g.rotation.current);
+    }
+}
+
+// --------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------
+
 static void anim_stopped_handler(Animation *animation, bool finished, void *context) {
     if (animation == g.animation) {
         animation_destroy(g.animation);
@@ -455,6 +482,7 @@ void animateClock() {
         g.above.current = g.horizon;
         g.below.current = g.horizon;
         g.rotation.current = g.kilter;
+        recomputeOrbit();
         layer_mark_dirty(g.layer);
         return;
     }
@@ -492,6 +520,7 @@ void interpolateClock(Animation* animation, const AnimationProgress progress) {
     g.above.current = g.above.from + (g.above.to - g.above.from) * t / norm;
     g.below.current = g.below.from + (g.below.to - g.below.from) * t / norm;
     g.rotation.current = g.rotation.from + (g.rotation.to - g.rotation.from) * t / norm;
+    recomputeOrbit();
     layer_mark_dirty(g.layer);
 }
 
@@ -557,7 +586,9 @@ void drawClock(Layer* layer, GContext* ctx) {
     fctx_set_fill_color(&fctx, g.colors[PaletteColorMarks]);
     fctx_set_color_bias(&fctx, 0);
     for (int h = 0; h < 24; ++h) {
-        FPoint c = clockPoint(fcenter, g.sunOrbitRadius, hourAngle(h) + g.rotation.current);
+        FPoint c = g.pipPoints[h];
+        c.x += fcenter.x;
+        c.y += fcenter.y;
         if (h % 6) {
             fctx_plot_circle(&fctx, &c, g.hourPipRadius);
 #ifdef PBL_COLOR
@@ -574,10 +605,11 @@ void drawClock(Layer* layer, GContext* ctx) {
     fctx_set_text_cap_height(&fctx, g.font, PBL_IF_COLOR_ELSE(g.hourCapHeight, FIXED_TO_INT(g.sunDiscRadius)*2));
     fctx_set_rotation(&fctx, g.rotation.current);
     for (int h = 0; h < 24; h += 6) {
-        FPoint c = clockPoint(fcenter, g.sunOrbitRadius, hourAngle(h) + g.rotation.current);
+        FPoint c = g.labelPoints[h / 6];
+        c.x += fcenter.x;
+        c.y += fcenter.y;
         fctx_set_offset(&fctx, c);
-        snprintf(g.strbuf, ARRAY_LENGTH(g.strbuf), "%02d", h);
-        fctx_draw_string(&fctx, g.strbuf, g.font, GTextAlignmentCenter, FTextAnchorMiddle);
+        fctx_draw_string(&fctx, kHourLabels[h / 6], g.font, GTextAlignmentCenter, FTextAnchorMiddle);
     }
     fctx_end_fill(&fctx);
 

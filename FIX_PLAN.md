@@ -115,9 +115,44 @@ All three fixes are in PebbleKit JS / resources — the watchface must be
 
 ---
 
+## Fix 4 — Battery drain, Phase 1: precompute static dial geometry (CORE — isolated commit)
+
+### Problem
+`drawClock()` re-rasterizes the entire vector scene every minute, even though
+only the sun marker and time digits change minute-to-minute. As a first,
+zero-risk step, the 24 orbit pips and 4 hour labels recomputed their positions
+(`clockPoint()` trig) and the labels re-ran `snprintf("%02d")` on every redraw,
+despite depending only on `g.rotation.current` — which changes only during the
+rare ~1s animations, not on ordinary minute ticks.
+
+### Fix (`src/c/main.c`, no visual change)
+- Cache pip/label positions as offsets from center: `g.pipPoints[24]`,
+  `g.labelPoints[4]`.
+- New `recomputeOrbit()` fills them from `g.rotation.current`; called only
+  where rotation changes: `init()` (after the boot rotation is set),
+  `animateClock()` skip-path, and `interpolateClock()` (per animation frame).
+- `drawClock()` pip/label loops read the cached offsets (`+ fcenter`) instead
+  of recomputing trig; hour labels use a constant `kHourLabels[]` table,
+  dropping the per-frame `snprintf`.
+- Output is pixel-identical (`clockPoint` is linear in center, so
+  `offset + fcenter == clockPoint(fcenter, …)`).
+
+### Risk / scope
+Removes 28 trig evals + 4 `snprintf` per minute. ~112 bytes of added state.
+Modest but free saving; the large win is Phase 2 (static-dial cache), tracked
+separately in the approved plan and gated on on-device testing.
+
+### Note for testing
+C change — must be **rebuilt** (chalk emulator + on-device). Verify the dial is
+visually identical and that pips/labels still animate on a day rollover /
+location update before merging to `main`.
+
+---
+
 ## Delivery
 1. Commit Fix 1 (timezone) on its own.
 2. Commit Fix 2 (icon) on its own.
 3. Commit Fix 3 (GPS reliability) on its own.
-4. Push `claude/watchface-timezone-picker-fixes-nrs4dq`.
-5. Merge to `main` (explicitly authorized by the owner) and push `main`.
+4. Commit Fix 4 (battery Phase 1) on its own.
+5. Push `claude/watchface-timezone-picker-fixes-nrs4dq`.
+6. Merge to `main` (owner-authorized) after each change is verified to build.
