@@ -336,13 +336,13 @@ static void init() {
     /* --- Calculate layout. --- */
 
     int16_t designRadius = sizeInner(frame.size) / 2 - PBL_IF_ROUND_ELSE(4, 0);       // 72
-    g.sunDiscRadius = designRadius * 3 / 25;                                          // 8
-    g.hourCapHeight = g.sunDiscRadius * 25 / 17;                                      // 11
-    int16_t sunDiscMargin = g.sunDiscRadius * 1 / 3;                                  // 2
-    g.sunOrbitRadius = designRadius - sunDiscMargin - g.sunDiscRadius;                // 62
-    g.readoutDiscRadius = g.sunOrbitRadius - g.sunDiscRadius - sunDiscMargin;         // 52
-    g.timeCapHeight = (g.readoutDiscRadius * 10 / 21) / 2 * 2;                        // 24
-    g.dateCapHeight = g.readoutDiscRadius * 3 / 11;                                   // 14
+    g.sunDiscRadius = designRadius * 2 / 25;                                          // 5  (thinner rim)
+    g.hourCapHeight = g.sunDiscRadius * 25 / 17;                                      // 7
+    int16_t sunDiscMargin = g.sunDiscRadius * 1 / 3;                                  // 1
+    g.sunOrbitRadius = designRadius - sunDiscMargin - g.sunDiscRadius;                // 66
+    g.readoutDiscRadius = g.sunOrbitRadius - g.sunDiscRadius - sunDiscMargin;         // 60
+    g.timeCapHeight = (g.readoutDiscRadius * 11 / 21) / 2 * 2;                        // 30  (bigger time font)
+    g.dateCapHeight = g.readoutDiscRadius * 3 / 11;                                   // 16
     g.dateTextGap = g.readoutDiscRadius * 4 / 50;                                     // 4
     g.strokeWidth = 2;
 

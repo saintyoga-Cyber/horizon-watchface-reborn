@@ -156,3 +156,33 @@ location update before merging to `main`.
 4. Commit Fix 4 (battery Phase 1) on its own.
 5. Push `claude/watchface-timezone-picker-fixes-nrs4dq`.
 6. Merge to `main` (owner-authorized) after each change is verified to build.
+
+---
+
+## Note — battery Phase 2 (static-dial cache) reverted
+The full-screen framebuffer cache (commit `318e15d`) caused the watchface to
+crash on the Pebble Time Round ("Horizon is not responding"). Most likely the
+~32 KB cache bitmap exhausted chalk's app RAM (later allocations then fail).
+Reverted in `8a0050b`. Recommendation: stay on Phase 1; the full cache is not
+viable on chalk without on-device memory testing.
+
+---
+
+## Fix 6 — UI: thinner outer rim + bigger time font (cosmetic — layout only)
+
+### Request
+Make the outer rim (the colored annulus carrying the sun/pips/labels) as thin
+as Halcyon, and enlarge the time font.
+
+### Fix (`src/c/main.c`, `init()` layout constants)
+- `sunDiscRadius`: `designRadius * 3 / 25` → `* 2 / 25`. The rim width is
+  `2*(sunDiscMargin + sunDiscRadius)`, so this shrinks it from ~20px to ~12px
+  on chalk and widens the central readout disc (52 → 60). Sun dot, 6-hour
+  markers and hour labels scale down with it.
+- `timeCapHeight`: ratio `10 / 21` → `11 / 21`. Combined with the larger disc,
+  the time cap height grows ~24 → ~30 on chalk.
+
+### Risk / scope
+Pure integer layout constants — no new code paths, allocation or APIs, so no
+crash risk (unlike Phase 2). Proportional ratios scale across all platforms.
+Exact proportions are subjective and trivially tunable; preview on-device.
