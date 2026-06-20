@@ -191,16 +191,6 @@ struct Clock {
     FPoint pipPoints[24];
     FPoint labelPoints[4];
 
-#ifdef PBL_COLOR
-    // Cached render of the static dial (everything except the sun marker and
-    // the time/date text). Lets ordinary minute ticks restore the dial with a
-    // bitmap copy instead of re-rasterizing ~30 fctx shapes. See drawClock().
-    GBitmap* dialCache;
-    bool dialCacheValid;   // cache contents are current
-    bool dialCacheNight;   // isNight state baked into the cache
-    bool dialCacheFailed;  // allocation failed; never retry, use full redraw
-#endif
-
     // animated state
     int16_anim_t above;
     int16_anim_t below;
@@ -234,17 +224,6 @@ static void logLocationFix(LocationFix* loc);
 static void recomputeOrbit(void);
 
 static char* const kHourLabels[4] = { "00", "06", "12", "18" };
-
-static void drawStaticDial(GContext* ctx, GRect bounds, GPoint center, FPoint fcenter, bool isNight);
-static void drawFace(GContext* ctx, FPoint fcenter, FPoint sunPoint, bool isNight);
-
-/* Invalidate the cached static-dial bitmap so the next redraw rebuilds it.
-   Called whenever anything other than the sun marker / time/date changes. */
-static inline void invalidateDialCache(void) {
-#ifdef PBL_COLOR
-    g.dialCacheValid = false;
-#endif
-}
 
 // --------------------------------------------------------------------------
 // inline utility functions
@@ -431,12 +410,6 @@ static void deinit() {
     window_destroy(g.window);
     layer_destroy(g.layer);
     ffont_destroy(g.font);
-#ifdef PBL_COLOR
-    if (g.dialCache) {
-        gbitmap_destroy(g.dialCache);
-        g.dialCache = NULL;
-    }
-#endif
 }
 
 // --------------------------------------------------------------------------
@@ -510,7 +483,6 @@ void animateClock() {
         g.below.current = g.horizon;
         g.rotation.current = g.kilter;
         recomputeOrbit();
-        invalidateDialCache();
         layer_mark_dirty(g.layer);
         return;
     }
@@ -549,7 +521,6 @@ void interpolateClock(Animation* animation, const AnimationProgress progress) {
     g.below.current = g.below.from + (g.below.to - g.below.from) * t / norm;
     g.rotation.current = g.rotation.from + (g.rotation.to - g.rotation.from) * t / norm;
     recomputeOrbit();
-    invalidateDialCache();
     layer_mark_dirty(g.layer);
 }
 
@@ -569,29 +540,17 @@ void formatTime() {
 
 // --------------------------------------------------------------------------
 
-#ifdef PBL_COLOR
-/* Copy the visible pixels of each row from src to dst. Intersecting the
-   per-row valid spans makes this correct for both the rectangular (8-bit)
-   and round (8-bit circular) framebuffer layouts. */
-static void copyRows(GBitmap* dst, GBitmap* src, int height) {
-    for (int y = 0; y < height; ++y) {
-        GBitmapDataRowInfo s = gbitmap_get_data_row_info(src, y);
-        GBitmapDataRowInfo d = gbitmap_get_data_row_info(dst, y);
-        int min_x = (s.min_x > d.min_x) ? s.min_x : d.min_x;
-        int max_x = (s.max_x < d.max_x) ? s.max_x : d.max_x;
-        if (max_x >= min_x) {
-            memcpy(d.data + min_x, s.data + min_x, (size_t)(max_x - min_x + 1));
-        }
-    }
-}
+void drawClock(Layer* layer, GContext* ctx) {
+
+#if SCREENSHOT
+    g.gregorian.tm_hour = 13;
+    g.gregorian.tm_min = 50;
+    g.battery = 10;
 #endif
 
-/* Render the static dial: everything except the sun marker and the
-   time/date text. Output is identical to the original draw order — the sun
-   (orbit radius 62) never overlaps the readout disc (radius 52), so deferring
-   it to drawFace() is purely cosmetic-neutral. */
-static void drawStaticDial(GContext* ctx, GRect bounds, GPoint center, FPoint fcenter, bool isNight) {
-
+    GRect bounds = layer_get_unobstructed_bounds(layer);
+    GPoint center = grect_center_point(&bounds);
+    FPoint fcenter = g2fpoint(center);
     GRect fill = bounds;
     GPoint left;
     GPoint right;
@@ -654,6 +613,29 @@ static void drawStaticDial(GContext* ctx, GRect bounds, GPoint center, FPoint fc
     }
     fctx_end_fill(&fctx);
 
+    /* Prep to draw the solar disc. */
+    uint32_t minute = g.gregorian.tm_hour * 60 + g.gregorian.tm_min;
+    FPoint sunPoint = clockPoint(fcenter, g.sunOrbitRadius, minuteAngle(minute) + g.rotation.current);
+
+    /* Fill the solar disc. */
+    fctx_begin_fill(&fctx);
+    fctx_set_fill_color(&fctx, g.colors[PaletteColorSolar]);
+    fctx_set_color_bias(&fctx, -3);
+    fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius - g.strokeWidth / 2);
+    fctx_end_fill(&fctx);
+    fctx_set_color_bias(&fctx, 0);
+
+    /* Stroke the solar disc perimeter. */
+    fctx_begin_fill(&fctx);
+    fctx_set_fill_color(&fctx, g.colors[PaletteColorMarks]);
+    fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius);
+    fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius - g.strokeWidth);
+    fctx_end_fill(&fctx);
+
+    /* Determine if it is night (sun below the horizon line) so the
+     * readout disc can invert its colors for legibility. */
+    bool isNight = sunPoint.y > fcenter.y + INT_TO_FIXED(g.below.current);
+
     /* Fill the readout background. */
     fctx_begin_fill(&fctx);
     fctx_set_fill_color(&fctx, g.colors[isNight ? PaletteColorText : PaletteColorWithin]);
@@ -713,31 +695,6 @@ static void drawStaticDial(GContext* ctx, GRect bounds, GPoint center, FPoint fc
     fctx_plot_circle(&fctx, &fcenter, g.readoutDiscRadius - g.strokeWidth);
     fctx_end_fill(&fctx);
 
-    fctx_deinit_context(&fctx);
-}
-
-/* Render the dynamic foreground: the sun marker (moves each minute) and the
-   time/weekday/date text. Drawn on top of the (possibly cached) static dial. */
-static void drawFace(GContext* ctx, FPoint fcenter, FPoint sunPoint, bool isNight) {
-
-    FContext fctx;
-    fctx_init_context(&fctx, ctx);
-
-    /* Fill the solar disc. */
-    fctx_begin_fill(&fctx);
-    fctx_set_fill_color(&fctx, g.colors[PaletteColorSolar]);
-    fctx_set_color_bias(&fctx, -3);
-    fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius - g.strokeWidth / 2);
-    fctx_end_fill(&fctx);
-    fctx_set_color_bias(&fctx, 0);
-
-    /* Stroke the solar disc perimeter. */
-    fctx_begin_fill(&fctx);
-    fctx_set_fill_color(&fctx, g.colors[PaletteColorMarks]);
-    fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius);
-    fctx_plot_circle(&fctx, &sunPoint, g.sunDiscRadius - g.strokeWidth);
-    fctx_end_fill(&fctx);
-
     FPoint p;
     fctx_begin_fill(&fctx);
     fctx_set_rotation(&fctx, 0);
@@ -780,73 +737,7 @@ static void drawFace(GContext* ctx, FPoint fcenter, FPoint sunPoint, bool isNigh
     fctx_end_fill(&fctx);
 
     fctx_deinit_context(&fctx);
-}
 
-void drawClock(Layer* layer, GContext* ctx) {
-
-#if SCREENSHOT
-    g.gregorian.tm_hour = 13;
-    g.gregorian.tm_min = 50;
-    g.battery = 10;
-#endif
-
-    GRect bounds = layer_get_unobstructed_bounds(layer);
-    GPoint center = grect_center_point(&bounds);
-    FPoint fcenter = g2fpoint(center);
-
-    /* The solar disc tracks the current minute; isNight (sun below the
-       horizon) selects the readout disc + text colors. Both are computed
-       before the static dial so the cached disc color matches. */
-    uint32_t minute = g.gregorian.tm_hour * 60 + g.gregorian.tm_min;
-    FPoint sunPoint = clockPoint(fcenter, g.sunOrbitRadius, minuteAngle(minute) + g.rotation.current);
-    bool isNight = sunPoint.y > fcenter.y + INT_TO_FIXED(g.below.current);
-
-    /* The static dial only changes when rotation/horizon/palette/battery/
-       bluetooth or isNight change — not on an ordinary minute tick. On color
-       platforms, cache it to a bitmap and restore it with a fast row copy so
-       each minute only the sun marker and time/date are re-rendered. If the
-       cache can't be allocated we fall back to the original full redraw. */
-    bool renderStatic = true;
-#ifdef PBL_COLOR
-    /* The cache mirrors the full framebuffer. While the screen is obstructed
-       (Quick View / timeline peek) the watchface re-centers into the smaller
-       unobstructed area, so bypass the cache entirely and full-render. */
-    GRect full = layer_get_bounds(layer);
-    bool obstructed = !grect_equal(&bounds, &full);
-    if (!obstructed) {
-        if (!g.dialCacheFailed && !g.dialCache) {
-            g.dialCache = gbitmap_create_blank(full.size, GBitmapFormat8Bit);
-            if (!g.dialCache) {
-                g.dialCacheFailed = true;
-            }
-        }
-        if (g.dialCache && g.dialCacheValid && g.dialCacheNight == isNight) {
-            GBitmap* fb = graphics_capture_frame_buffer(ctx);
-            if (fb) {
-                copyRows(fb, g.dialCache, full.size.h);   /* cache -> framebuffer */
-                graphics_release_frame_buffer(ctx, fb);
-                renderStatic = false;
-            }
-        }
-    }
-#endif
-
-    if (renderStatic) {
-        drawStaticDial(ctx, bounds, center, fcenter, isNight);
-#ifdef PBL_COLOR
-        if (!obstructed && g.dialCache) {
-            GBitmap* fb = graphics_capture_frame_buffer(ctx);
-            if (fb) {
-                copyRows(g.dialCache, fb, full.size.h);   /* framebuffer -> cache */
-                graphics_release_frame_buffer(ctx, fb);
-                g.dialCacheValid = true;
-                g.dialCacheNight = isNight;
-            }
-        }
-#endif
-    }
-
-    drawFace(ctx, fcenter, sunPoint, isNight);
 }
 
 static inline FPoint batteryPoint(int k, fixed_t side) {
@@ -886,13 +777,11 @@ static void timeChanged(struct tm* gregorian, TimeUnits unitsChanged) {
 
 static void bluetoothConnected(bool connected) {
     g.bluetooth = connected;
-    invalidateDialCache();
     layer_mark_dirty(g.layer);
 }
 
 static void batteryStateChanged(BatteryChargeState charge) {
     g.battery = (charge.charge_percent + 5) / 10;
-    invalidateDialCache();
     layer_mark_dirty(g.layer);
 }
 
@@ -908,7 +797,6 @@ static void messageReceived(DictionaryIterator* received, void* context) {
     if (tuple) {
         g.batteryIndicator = tuple->value->int16 != 0;
         persist_write_bool(PersistKeyBattery, g.batteryIndicator);
-        invalidateDialCache();
         layer_mark_dirty(g.layer);
     }
 
@@ -916,7 +804,6 @@ static void messageReceived(DictionaryIterator* received, void* context) {
     if (tuple) {
         g.bluetoothAlert = tuple->value->int32;
         persist_write_int(PersistKeyBluetooth, g.bluetoothAlert);
-        invalidateDialCache();
         layer_mark_dirty(g.layer);
     }
 
@@ -1022,7 +909,6 @@ static void applyPalette(const uint8_t* palette, int16_t length) {
     for (k = 0; k < length; ++k) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Palette[%d] = 0x%02X", k, palette[k]);
     }
-    invalidateDialCache();
 }
 
 void logLocationFix(LocationFix* loc) {

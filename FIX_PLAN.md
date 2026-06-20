@@ -139,7 +139,8 @@ rare ~1s animations, not on ordinary minute ticks.
 
 ### Risk / scope
 Removes 28 trig evals + 4 `snprintf` per minute. ~112 bytes of added state.
-Modest but free saving; the large win is Phase 2 (static-dial cache), below.
+Modest but free saving; the large win is Phase 2 (static-dial cache), tracked
+separately in the approved plan and gated on on-device testing.
 
 ### Note for testing
 C change — must be **rebuilt** (chalk emulator + on-device). Verify the dial is
@@ -148,49 +149,10 @@ location update before merging to `main`.
 
 ---
 
-## Fix 5 — Battery drain, Phase 2: static-dial bitmap cache (CORE — isolated commit)
-
-### Problem
-Even after Phase 1, `drawClock()` re-rasterizes ~30 fctx shapes (24 pips, 4
-labels, readout disc, rings, battery/bluetooth dishes) every minute, while only
-the sun marker and time/date actually change. fctx rasterization is the
-dominant per-minute cost and the main battery difference vs. lighter faces.
-
-### Fix (`src/c/main.c`, color platforms only)
-- Split the renderer: `drawStaticDial()` (background, horizon, pips, labels,
-  readout disc, battery, bluetooth, rings) and `drawFace()` (sun marker +
-  time/weekday/date). The sun (orbit radius 62) never overlaps the readout
-  disc (radius 52), so deferring it to `drawFace()` is output-neutral.
-- Cache the static dial in a framebuffer-sized `GBitmap` (`g.dialCache`). Each
-  minute: if the cache is valid, restore it with a per-row copy (`copyRows`,
-  correct for both rectangular and round/circular framebuffers) and draw only
-  the face. On a state change, full-render then re-capture into the cache.
-- Invalidation (`invalidateDialCache()`): rotation/horizon (animate skip +
-  interpolate), palette (`applyPalette`), battery, bluetooth, and an `isNight`
-  flip (compared in `drawClock`).
-- Safety: cache allocated lazily with a NULL-check fallback to the original
-  full redraw (`dialCacheFailed`); bypassed entirely while the screen is
-  obstructed (Quick View). `#ifdef PBL_COLOR` — aplite/diorite keep the
-  existing path. Freed in `deinit()`.
-
-### Risk / scope
-Higher-risk core-rendering change. Per-minute work drops from ~30 fctx fills to
-one bitmap copy + sun + text. Extra RAM ≈ framebuffer size (chalk ~32 KB of
-64 KB; fallback covers any allocation failure).
-
-### Note for testing
-**Must be rebuilt and tested on-device (chalk).** Verify: pixel-identical dial;
-sun moves each minute; smooth animation on day rollover / location update;
-readout disc + text invert correctly across sunrise/sunset; battery + bluetooth
-indicators update; `heap_bytes_free()` headroom is positive on chalk.
-
----
-
 ## Delivery
 1. Commit Fix 1 (timezone) on its own.
 2. Commit Fix 2 (icon) on its own.
 3. Commit Fix 3 (GPS reliability) on its own.
 4. Commit Fix 4 (battery Phase 1) on its own.
-5. Commit Fix 5 (battery Phase 2) on its own.
-6. Push `claude/watchface-timezone-picker-fixes-nrs4dq`; merge to `main`
-   (owner-authorized).
+5. Push `claude/watchface-timezone-picker-fixes-nrs4dq`.
+6. Merge to `main` (owner-authorized) after each change is verified to build.
